@@ -8,20 +8,104 @@ const { interface, bytecode } = require('../compile');
 let lottery;
 let accounts;
 
-beforeEach(async() => {
+beforeEach(async () => {
 	accounts = await web3.eth.getAccounts();
-  console.log('accounts: ', accounts);
+	// console.log('accounts: ', accounts);
 
 	lottery = await new web3.eth.Contract(JSON.parse(interface))
 		.deploy({ data: bytecode })
 		.send({ from: accounts[0], gas: '1000000' });
-
 });
-
 
 describe('Lottery Contract', () => {
-  it('deploys a contract', () => {
-    assert.ok(lottery.options.address);
-  });
-});
+	it('deploys a contract', () => {
+		assert.ok(lottery.options.address);
+	});
 
+	it('allow one account to enter', async () => {
+		await lottery.methods.enter().send({
+			from: accounts[0],
+			value: web3.utils.toWei('0.02', 'ether'),
+		});
+		const players = await lottery.methods
+			.getPlayers()
+			.call({ from: accounts[0] });
+
+		assert.equal(accounts[0], players[0]);
+		assert.equal(1, players.length);
+	});
+
+	it('allow multiple accounts to enter', async () => {
+		await lottery.methods.enter().send({
+			from: accounts[0],
+			value: web3.utils.toWei('0.02', 'ether'),
+		});
+		await lottery.methods.enter().send({
+			from: accounts[1],
+			value: web3.utils.toWei('0.02', 'ether'),
+		});
+		await lottery.methods.enter().send({
+			from: accounts[2],
+			value: web3.utils.toWei('0.02', 'ether'),
+		});
+
+		const players = await lottery.methods
+			.getPlayers()
+			.call({ from: accounts[0] });
+
+		assert.equal(accounts[0], players[0]);
+		assert.equal(accounts[1], players[1]);
+		assert.equal(accounts[2], players[2]);
+		assert.equal(3, players.length);
+	});
+
+	it('requires a minimum amount of ether to enter', async () => {
+    try {
+      await lottery.methods.enter().send({
+        from: accounts[0], 
+        value: 0
+      });
+      // if for any reason above lines doesn't throw an error, assert(false) will.
+      // if it throws an error, the following will be skipped.
+      assert(false);
+    } catch (error) {
+      // console.error(error);
+      // console.log('error: ', error);
+      assert(error);
+//      assert.ok(error);
+    }
+	});
+
+  it('only manager can call pickWinner. ', async()=> {
+    try {
+      // to test the restricted modifier.
+      await lottery.methods.pickWinner().send({
+        from: accounts[1],
+      });
+      assert(false);
+    } catch (error) {
+      // console.log('error: ', error);
+      assert(error);
+    }
+  });
+
+  it('sends money to the winner and resets the players array', async ()=> {
+		await lottery.methods.enter().send({
+			from: accounts[0],
+			value: web3.utils.toWei('2', 'ether'),
+		});
+
+    const initialBalance = await web3.eth.getBalance(accounts[0]);
+
+		await lottery.methods.pickWinner().send({
+			from: accounts[0],
+		});
+
+    const finalBalance = await web3.eth.getBalance(accounts[0]);
+
+    const differnce  = finalBalance - initialBalance;
+    assert(differnce > web3.utils.toWei('1.8', 'ether') );
+    console.log('differnce: ', differnce);
+  });
+
+});
